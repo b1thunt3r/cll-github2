@@ -1,0 +1,58 @@
+name: Build and Deploy
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - "MySite/**"
+  pull_request:
+    branches:
+    - main
+    paths:
+    - "MySite/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@master
+      
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - uses: azure/docker-login@v1
+      with:
+        login-server: cllgithub.azurecr.io
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+        
+    - run: |
+        docker build . -f MySite/Dockerfile -t cllgithub.azurecr.io/mysite:${{ github.sha }}
+        docker push cllgithub.azurecr.io/mysite:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 'Login via Azure CLI'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: 'Deploy to Azure Container Instances'
+      uses: 'azure/aci-deploy@v1'
+      with:
+        resource-group: cll-github
+        dns-name-label: mysite-2103a
+        image: cllgithub.azurecr.io/mysite:${{ github.sha }}
+        registry-login-server: cllgithub.azurecr.io
+        registry-username: ${{ secrets.REGISTRY_USERNAME }}
+        registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+        name: mysite
+        location: 'northeurope'
